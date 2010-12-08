@@ -1,0 +1,20 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * Contains un/installation hook implementations.
+ */
+ 
+/**
+ * Implements hook_install().
+ */
+function cck_fieldgroup_tabs_comments_install() {
+
+}
+
+
+function cck_fieldgroup_tabs_comments_uninstall() {
+
+}
+
