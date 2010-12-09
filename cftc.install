@@ -1,0 +1,28 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * Contains un/installation hook implementations.
+ */
+ 
+/**
+ * Implements hook_install().
+ */
+function cftc_install() {
+  // Set the module weight higher than CCK Fieldgroup Tabs and Pathauto to avoid conflicts.
+  $weight = db_result(db_query("SELECT MAX(weight) FROM {system} WHERE type = 'module' AND (name = 'cck_fieldgroup_tabs' OR name = 'pathauto')"));
+  db_query("UPDATE {system} SET weight = %d WHERE type = 'module' AND name = 'cftc'", ($weight ? $weight : 0) + 10);
+}
+
+
+/**
+ * Implements hook_uninstall().
+ */
+function cftc_uninstall() {
+  $configs = db_query("SELECT name FROM {variable} WHERE name LIKE 'cftc\_configs\_%'");
+  while ($variable = db_result($configs)) {
+    variable_del($variable);
+  }
+}
+
