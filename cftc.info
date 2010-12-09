@@ -1,5 +1,5 @@
 ; $Id$
-name = CCK Fieldgroup Tabs plus Comments
+name = CCK Fieldgroup Tabs plus Comments (CFTC)
 description = Enables the CCK Fieldgroup Tabs module to also include comments on a separate jQuery UI Tab.
 dependencies[] = comment_display
 dependencies[] = cck_fieldgroup_tabs
