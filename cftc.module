@@ -1,0 +1,296 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * Enables comments to be on their separate jQuery UI tab.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function cftc_menu() {
+  $items = array();
+
+  $items['node/%node/comments'] = array(
+    'title callback' => 'cftc_title',
+    'title arguments' => array(1),
+    'page callback' => 'cftc_comments_page',
+    'page arguments' => array(1),
+    'access arguments' => array('access comments'),
+  );
+
+  $items['node/%node/comments/ajax'] = array(
+    'page callback' => 'cftc_comments_page',
+    'page arguments' => array(1, 'inline'),
+    'access arguments' => array('access comments'),
+  );
+
+  return $items;
+}
+
+
+/**
+ * Implements hook_nodeapi().
+ */
+function cftc_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
+  switch ($op) {
+    case 'insert':
+    case 'update':
+      $configs = variable_get('cftc_configs_' . $node->type, array(
+        'ajax' => 0,
+        'alias' => 0,
+        'enabled' => 1,
+        'separate_form' => 0,
+        'alias_path' => 'comments',
+      ));
+
+      if ($configs['alias']) {
+        _cftc_set_alias($node->nid, $configs['alias_path']);
+      }
+      break;
+
+    case 'view':
+      if (!isset($node->content['fieldgroup_tabs'])) {
+        return;
+      }
+
+      $configs = variable_get('cftc_configs_' . $node->type, array(
+        'ajax' => 0,
+        'alias' => 0,
+        'enabled' => 1,
+        'separate_form' => 0,
+        'alias_path' => 'comments',
+      ));
+      if (!$configs['enabled']) {
+        return;
+      }
+
+      $node->content['fieldgroup_tabs']['comments'] = array(
+        '#type' => 'tabpage',
+        '#title' => t('Comments'),
+      );
+
+      if ($configs['ajax']) {
+        $node->content['fieldgroup_tabs']['comments']['#ajax_url'] = url('node/' . $node->nid . '/comments/ajax');
+      }
+      else {
+        $node->content['fieldgroup_tabs']['comments']['#content'] = cftc_comments_page($node, 'inline', $configs);
+      }
+
+      // Add a separate tab for comment form, if set so.
+      if ($configs['separate_form']) {
+        $node->content['fieldgroup_tabs']['comments_form'] = array(
+          '#type' => 'tabpage',
+          '#title' => t('Post new comment'),
+          '#content' => comment_form_box(array('nid' => $node->nid), t('Post new comment')),
+        );
+      }
+      break;
+  }
+}
+
+
+/**
+ * Implements hook_form_alter().
+ */
+function cftc_form_alter(&$form, $form_state, $form_id) {
+  if ($form_id != 'node_type_form' || !isset($form['#node_type']->type)) {
+    return;
+  }
+
+  $type = $form['#node_type']->type;
+  $configs = variable_get('cftc_configs_' . $type, array(
+    'ajax' => 0,
+    'alias' => 0,
+    'enabled' => 1,
+    'separate_form' => 0,
+    'alias_path' => 'comments',
+  ));
+
+  $form['comment']['comments_ui_tab'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Comment UI Tab settings'),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+  );
+
+  $form['comment']['comments_ui_tab']['cftc_enabled'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Enable comment tab.'),
+    '#description' => t('Shows comments on a separate jQuery UI tab alongside with fieldgroup tabs.'),
+    '#default_value' => $configs['enabled'],
+    '#return_value' => 1,
+  );
+
+  $form['comment']['comments_ui_tab']['cftc_separate_form'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Show the comment form on its own tab.'),
+    '#description' => t('Better fit with comment submission form  on a separate page.'),
+    '#default_value' => $configs['separate_form'],
+    '#return_value' => 1,
+  );
+  
+  $form['comment']['comments_ui_tab']['cftc_ajax'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Use ajax to load comments in the new tab.'),
+    '#description' => t('If checked, comments will be fetched via ajax by clicking on the tab. Additionally this will create a <code>node/%nid/comments</code> path for all nodes. Use below options to make the process as SEO friendly as possible.'),
+    '#default_value' => $configs['ajax'],
+    '#return_value' => 1,
+  );
+
+  $form['comment']['comments_ui_tab']['aliases'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Alias generation options'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+  );
+
+  $form['comment']['comments_ui_tab']['aliases']['cftc_alias'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Create a <code>%alias/comments</code> alias for a node comments page from now on.'),
+    '#description' => t('A URL alias will be created for comments page to be as SEO friendly as possible. This needs the core <strong>path</strong> enabled.'),
+    '#default_value' => $configs['alias'],
+    '#return_value' => 1,
+  );
+
+  $form['comment']['comments_ui_tab']['aliases']['cftc_retroactive'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Retroactively update paths and aliases based on current settings.'),
+    '#description' => t('Creates <code>%alias/comments</code> paths and aliases for previously created nodes of this type. <strong>CAUTION: This is a slow experimental feature</strong> and will be implemented using the batch API in future.'),
+    '#default_value' => 0,
+    '#return_value' => 1,
+  );
+
+  $form['comment']['comments_ui_tab']['aliases']['cftc_alias_path'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Alias path'),
+    '#description' => t('Alias path to be replaced with <code>comments</code> with no preceding or trailing slash. e.g. <em>reviews</em>'),
+    '#default_value' => $configs['alias_path'],
+    '#required' => TRUE,
+  );
+
+  $form['comment']['comments_ui_tab']['cftc_node_type'] = array(
+    '#type' => 'hidden',
+    '#value' => $type,
+  );
+
+  $form['#submit'][] = 'cftc_node_type_form_submit';
+}
+
+
+/**
+ * Form submission callback for node_type_form.
+ */
+function cftc_node_type_form_submit($form, &$form_state) {
+  $configs = array(
+    'ajax' => $form_state['values']['cftc_ajax'],
+    'alias' => $form_state['values']['cftc_alias'],
+    'enabled' => $form_state['values']['cftc_enabled'],
+    'separate_form' => $form_state['values']['cftc_separate_form'],
+    'alias_path' => $form_state['values']['cftc_alias_path'],
+  );
+
+  if ($form_state['values']['cftc_retroactive']) {
+    _cftc_retroactive($form_state['values']['cftc_node_type'], $configs);
+  }
+  variable_set('cftc_configs_' . $form_state['values']['cftc_node_type'], $configs);
+}
+
+
+/**
+ * Title callback for a node comments page.
+ *
+ * @param $node
+ *   Node object.
+ *
+ * @return
+ *   Node comments page title.
+ */
+function cftc_title($node) {
+  return '"' . check_plain($node->title) . '" ' . t('comments');
+}
+
+
+/**
+ * Page callback for a node comments page.
+ *
+ * @param $node
+ *   Node object.
+ * @param $display
+ *   Specifies the display mode.
+ *   - page
+ *   - inline
+ * @param $configs
+ *   An array of module's node type configurations.
+ *
+ * @return
+ *   Node comments page contents.
+ */
+function cftc_comments_page($node, $display = 'page', $configs = array()) {
+  switch ($display) {
+    case 'inline':
+      // Fix.
+      die(comment_render($node));
+
+    case 'page':
+      drupal_set_breadcrumb(array(
+        l(t('Home'), '<front>'),
+        l($node->title, 'node/' . $node->nid),
+        t('Comments'),
+      ));
+      return comment_render($node);
+  }
+}
+
+/**
+ * Helper function to retoroactively create path aliases.
+ *
+ * @param $type
+ *   The node type.
+ * @param $configs
+ *   Configuration array.
+ */
+function _cftc_retroactive($type, $configs) {
+  $results = db_query("SELECT nid FROM {node} WHERE type = '%s'", $type);
+  while ($node = db_fetch_object($results)) {
+    // Set comments page aliases retroactively.
+    if ($configs['alias']) {
+      _cftc_set_alias($node->nid, $configs['alias_path']);
+    }
+    // Remove 'em so.
+    else {
+      _cftc_del_alias($node->nid);
+    }
+  }
+}
+
+
+/**
+ * Helper function to set a comments page alias.
+ *
+ * @param $nid
+ *   Node identifier to remove the alias from.
+ * @param $alias_path
+ *   Alias path to be set.
+ */
+function _cftc_set_alias($nid, $alias_path = 'comments') {
+  $path = 'node/' . $nid;
+  $alias = drupal_get_path_alias($path);
+  if ($alias != $path) {
+    _cftc_del_alias($nid);
+    path_set_alias($path . '/comments', $alias . '/' . $alias_path);
+  }
+}
+
+
+/**
+ * Helper function to delete a node comments page alias.
+ *
+ * @param $nid
+ *   Node identifier to remove the alias from.
+ */
+function _cftc_del_alias($nid) {
+  db_query("DELETE FROM {url_alias} WHERE src = 'node/%s/comments'", $nid);
+}
+
